@@ -1,4 +1,4 @@
-# AgriConnect (v2 demo)
+# AgriReuse
 
     npm install
     npm run dev      # http://localhost:5173
