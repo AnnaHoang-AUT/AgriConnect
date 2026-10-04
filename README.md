@@ -21,7 +21,22 @@ npm run build
 
 Deploy the generated `dist` directory with your existing Vercel or Netlify project. This package does not publish changes to your live site.
 
-## What changed
+## Workspace update
+
+The attached AgriReuse reference's useful workflows were adapted into the current Vite/React application. The app keeps a white background, restrained green accents, rounded cards and responsive sticky navigation. It does not require the reference project's Next.js/Supabase setup.
+
+- **Create Listing** retains the automatic spoken listing, screening, confirmation, payment and delivery conversation. Pickup area is editable; Northland is the default.
+- **Dashboard** adds action items, activity notifications, six summary metrics, a location bar chart, eight-week reuse line chart and status doughnut chart. Chart data can also be opened as tables. Switch between your activity and labelled fictional examples.
+- **Marketplace** imports 89 fictional reference listings plus two original local requests. Search material/business/location and filter by supply/request, category, own listings and archive state. Edit, archive, restore or delete your own listings and requests; active exchanges prevent editing/deleting their supply listing.
+- **Buyer requests** specify material/category/unit, quantity range, budget, estimated alternative cost, location, intended use, distance and dates. Matches check these constraints and block held or already allocated supply. Feed suitability needs explicit confirmation.
+- **Matches** shows reasons, transport and goods estimates. Price/quantity near matches support simulated offer drafts; offers can be withdrawn in Transactions. No buyer negotiation messages are actually sent.
+- **Transactions** saves payment stages, carrier measurements, condition changes, refunds and a timeline. Reopen an exchange after navigation or reload. Cancel before pickup to refund held demo payments, or raise/resolve a simulated dispute. An unresolved dispute pauses payment/carrier actions.
+- **Impact** counts completed transactions using actual accepted delivered quantities. Pending, cancelled and unweighed volumes are excluded from completed weight/carbon totals. Separate projected availability, scenario ranges and assumptions are shown; estimates are illustrative and can be negative when transport outweighs benefit.
+- **No-match alerts** are opt-in. AgriReuse asks the seller on screen or by voice whether to notify potential nearby buyers. Every spoken choice is confirmed. Declining sends nothing and preserves the live listing; alerts can be approved later. Approval records an in-app simulation once, without sending email or SMS.
+
+Published listings, buyer requests, offers, notifications and transactions are saved per demo account in browser storage. Unpublished listing drafts are kept only on the current screen. New data does not sync across devices or browsers.
+
+## Earlier features retained
 
 - Clickable logo with the tagline below the name.
 - Sticky navigation includes Home, Back where available, account access and the current step. Back from Delivery preserves held funds, measurements and trade progress; Continue to delivery returns to the trade.
@@ -83,7 +98,12 @@ Primary guidance consulted on 4 October 2026:
 
 ## Files and verification
 
-- `src/App.jsx`: listing, navigation and carrier workflow.
+- `src/App.jsx`: listing, navigation, saved transaction integration and carrier workflow.
+- `src/Hub.jsx`: dashboard, marketplace, requests, matches, offers, transactions and impact views.
+- `src/Charts.jsx`: responsive bar, line and doughnut charts with accessible data tables.
+- `src/portfolio.js`: reference seed mapping, match constraints, approved alerts and impact calculations.
+- `src/usePortfolio.js`: per-account browser persistence.
+- `tests/portfolio.test.js`: matching exclusions, alert consent/idempotence and completed actual-quantity metrics.
 - `src/useListingConversation.js`: automatic conversation across listing and trade stages.
 - `src/voiceConversation.js`: cancellable speech, automatic listening, confirmations and number parsing.
 - `src/voicePrompts.js`: concise spoken questions and responsibilities.
@@ -94,8 +114,8 @@ Primary guidance consulted on 4 October 2026:
 - `tests/settlement.test.js`: financial conservation, full/partial/zero quantities, excess cap, invalid values and listing parsing.
 - `tests/voice.test.js`: spoken quantities/prices, answer correction, pause, cancellation and repeat.
 
-Verified: production build, lint, nine automated tests, existing React component interaction checks, and a complete spoken-flow component test with mocked speech APIs: automatic resumption after login, review, checks, responsibilities, publication, match selection, payments, quantities, PIN, payouts and refunds. A real browser visual/microphone test was unavailable in the execution environment.
+Verified: production build, lint, 13 automated tests, component interaction checks for filters/requests/archive/restore/delete/reload, spoken opt-in alert approval, and a complete spoken-flow component test with mocked speech APIs: automatic resumption after login, review, checks, responsibilities, publication, match selection, payments, quantities, PIN, payouts and refunds. A real browser visual/microphone test was unavailable in the execution environment.
 
 ## Demo limitations
 
-Prices, distances and farms are synthetic. Accounts live in this browser; payment holds, refunds, role permissions and notifications are simulated. No messages are actually sent. Trade progress is kept in React state and resets on reload or confirmed Home navigation. Real operation needs authenticated roles, a database, server-side measurement/audit records, dispute handling and payment-provider integration. The existing full transport refund policy still needs a defined funding source for the carrier in production.
+Prices, distances and farms are synthetic. Accounts live in this browser; payment holds, refunds, role permissions and notifications are simulated. No messages are actually sent. Published records and transaction snapshots persist in browser storage and can be reopened from Transactions. Home clears only the current screen/draft, not saved records. Records are not shared across devices; browser storage is not a secure production database. Real operation needs authenticated roles, a database, server-side measurement/audit records, dispute handling and payment-provider integration. The existing full transport refund policy still needs a defined funding source for the carrier in production.
