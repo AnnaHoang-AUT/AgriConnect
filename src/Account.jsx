@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { categories, FEE } from './data'
 import { signUp, logIn, saveUser } from './auth'
 
-export function AuthPanel({ onDone, note }) {
+export function AuthPanel({ onDone, note, onLegal }) {
   const [mode, setMode] = useState('signup')
-  const [f, setF] = useState({ name: '', farm: '', email: '', password: '', terms: false })
+  const [f, setF] = useState({ name: '', farm: '', nzbn: '', email: '', password: '', terms: false })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setF({ ...f, [k]: v })
@@ -13,7 +13,8 @@ export function AuthPanel({ onDone, note }) {
   async function submit(e) {
     e.preventDefault()
     setErr('')
-    if (up && (!f.name.trim() || !f.farm.trim())) return setErr('Enter your name and farm or business name.')
+    if (up && (!f.name.trim() || !f.farm.trim())) return setErr('Enter your name and business name.')
+    if (up && !/^\d{13}$/.test(f.nzbn.replace(/\s/g, ''))) return setErr('Enter your 13-digit NZBN (digits only).')
     if (!/^\S+@\S+\.\S+$/.test(f.email)) return setErr('Enter a valid email address.')
     if (f.password.length < 8) return setErr('Password must be at least 8 characters.')
     if (up && !f.terms) return setErr('Please accept the terms to continue.')
@@ -30,17 +31,18 @@ export function AuthPanel({ onDone, note }) {
         {up && (
           <div className="form-grid">
             <label>Your name<input value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="name" /></label>
-            <label>Farm or business<input value={f.farm} onChange={(e) => set('farm', e.target.value)} /></label>
+            <label>Business name<input value={f.farm} onChange={(e) => set('farm', e.target.value)} autoComplete="organization" /></label>
           </div>
         )}
         <div className="form-grid one">
+          {up && <label>NZBN (13 digits)<input value={f.nzbn} inputMode="numeric" maxLength={17} placeholder="e.g. 9429 0000 0000 0" onChange={(e) => set('nzbn', e.target.value)} /></label>}
           <label>Email<input type="email" value={f.email} onChange={(e) => set('email', e.target.value)} autoComplete="email" /></label>
           <label>Password (8+ characters)<input type="password" value={f.password} onChange={(e) => set('password', e.target.value)} autoComplete={up ? 'new-password' : 'current-password'} /></label>
         </div>
         {up && (
           <label className="check">
             <input type="checkbox" checked={f.terms} onChange={(e) => set('terms', e.target.checked)} />
-            <span>I agree to the Terms of Use and Privacy Policy. My details are used only to run my AgriReuse account (Privacy Act 2020).</span>
+            <span>I agree to the <button type="button" className="link inline" onClick={() => onLegal('terms')}>Terms of Use</button> and <button type="button" className="link inline" onClick={() => onLegal('privacy')}>Privacy Policy</button>. My details are used only to run my AgriReuse account (Privacy Act 2020).</span>
           </label>
         )}
         {err && <p className="error" role="alert">{err}</p>}
@@ -65,7 +67,7 @@ export function AccountPanel({ user, onChange, onBack, onLogout }) {
   return (
     <section className="panel">
       <div className="mrow">
-        <div className="grow"><h2>{user.farm}</h2><p className="muted">{user.name} · {user.email}</p></div>
+        <div className="grow"><h2>{user.farm}</h2><p className="muted">{user.name} · {user.email}{user.nzbn ? ' · NZBN ' + user.nzbn : ''}</p></div>
         <span className={'tag ' + (user.member ? 'green' : 'grey')}>{user.member ? 'Subscribed member' : 'Free account'}</span>
       </div>
 
