@@ -331,3 +331,6 @@ input::placeholder,textarea::placeholder{color:#8a968e}
 .voice-tools { margin: 14px 0; text-align: left; }
 .voice-active { outline: 2px solid #417d4b; outline-offset: 4px; border-radius: 8px; }
 @media (max-width: 600px) { .header { padding-inline: 5%; flex-wrap: wrap; } .acct { gap: 12px; width: 100%; justify-content: flex-start; } .main { padding-top: 30px; } .nav-status { margin-left: auto; } .ledger > div { gap: 12px; } }
+.conversation-bar { background: #eef7ef; border: 1px solid #bbd8c0; border-radius: 14px; padding: 18px; margin-bottom: 24px; text-align: left; }
+.conversation-bar p { margin: 10px 0; }
+.conversation-bar small { display: block; color: #587162; margin-top: 10px; }

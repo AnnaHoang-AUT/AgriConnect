@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { shortRuleQuestions } from './voicePrompts'
 export function useRuleVoice(questions, onAnswer) {
   const [active, setActive] = useState(-1)
   const [status, setStatus] = useState('')
@@ -22,7 +23,7 @@ export function useRuleVoice(questions, onAnswer) {
     setActive(index)
     const id = generation.current
     const q = questions[index]
-    const utterance = new SpeechSynthesisUtterance(`Question ${index + 1} of ${questions.length}. ${q.text} ${q.law}. ${q.help || ''} Answer yes, no, or not sure. You can also select an answer on screen.`)
+    const utterance = new SpeechSynthesisUtterance(`Question ${index + 1} of ${questions.length}. ${q.id === 'pest' && q.text.includes('contaminated soil') ? 'Do you suspect pests or disease, contaminated soil, or movement restrictions?' : shortRuleQuestions[q.id] || q.text} Answer yes, no, or not sure. You can also select an answer on screen.`)
     utterance.lang = 'en-NZ'
     setStatus('Reading question…')
     utterance.onend = () => { if (generation.current === id) setStatus('Choose an answer or press Speak my answer.') }

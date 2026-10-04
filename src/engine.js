@@ -1,3 +1,4 @@
+import { numberVoice } from './voiceConversation.js'
 import { categories, demand, farms, routes, FEE } from './data.js'
 
 export const money = (n) => '$' + n.toFixed(2)
@@ -18,7 +19,7 @@ export function parseListing(text) {
   const cat = /eggshell|egg shell/.test(t) ? 'eggshell' : /wool|fleece/.test(t) ? 'wool' : /wood|sawdust|shavings/.test(t) ? 'wood' : /manure|compost|effluent|mulch/.test(t) ? 'organic' : /meat|bone|blood|offal|whey|fish/.test(t) ? 'animal' : 'plant'
   const base = categories[cat].price
   return {
-    material: mat ? mat[1].trim() : 'surplus material', cat, quantity, unit,
+    material: mat ? mat[1].trim().replace(/^of\s+/, '') : 'surplus material', cat, quantity, unit,
     collectDays: d ? +d[1] : 7,
     price: unit === 'm³' ? 25 : unit === 'bales' ? 20 : base,
   }
@@ -72,4 +73,14 @@ export function settle(goods, transport, declared = 1, picked = declared, delive
   const releaseCents = Math.round(heldCents * quantity / declared)
   const feeCents = Math.round(releaseCents * FEE.rate)
   return { fee: feeCents / 100, sellerGets: (releaseCents - feeCents) / 100, transport, buyerPays: heldCents / 100, releasedGoods: releaseCents / 100, buyerRefund: (heldCents - releaseCents) / 100, quantity, releasePercent: quantity / declared * 100 }
+}
+
+// Recognition can return written number words instead of digits.
+export function parseSpokenListing(text) {
+  const numberWords = '(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|point)'
+  const pattern = new RegExp(`\\b(${numberWords}(?:[ -]+${numberWords})*)\\s+(?=kilograms?\\b|kilos?\\b|kg\\b|tonnes?\\b|tons?\\b|days?\\b|bales?\\b)`, 'gi')
+  return parseListing(text.replace(pattern, (whole, words) => {
+    const n = numberVoice(words)
+    return n === null ? whole : `${n} `
+  }).replace(/kilograms?/gi, 'kg'))
 }

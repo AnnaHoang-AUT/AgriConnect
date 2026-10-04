@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import './App.css'
 import { useRuleVoice } from './useRuleVoice'
+import { useListingConversation } from './useListingConversation'
 import { categories, declarations, deliveryRules, farms, FEE } from './data'
 import { AuthPanel, AccountPanel } from './Account'
 import { LegalModal } from './Legal'
@@ -31,6 +32,7 @@ export default function App() {
   const [legal, setLegal] = useState(null) // null | 'terms' | 'privacy'
   const [authMode, setAuthMode] = useState('signup')
   const [voiceMode, setVoiceMode] = useState(false)
+  const [allVoice, setAllVoice] = useState(false)
   const [pickup, setPickup] = useState(null)
   const [delivery, setDelivery] = useState(null)
   const [actualQty, setActualQty] = useState('')
@@ -50,17 +52,7 @@ export default function App() {
   const s = sel ? settle(goods, sel.route.cost, listing.quantity, pickup?.qty ?? agreedQty, delivery?.qty ?? pickup?.qty ?? agreedQty) : null
   const funded = paid.seller && paid.buyer
 
-  function speak() {
-    setVoiceMode(true)
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) return alert('Voice input is not supported in this browser. Please type instead.')
-    const rec = new SR()
-    rec.lang = 'en-NZ'
-    rec.onstart = () => setListening(true)
-    rec.onend = () => setListening(false)
-    rec.onresult = (e) => setText(e.results[0][0].transcript)
-    rec.start()
-  }
+  function speak() { voice.stop(); setVoiceMode(true); assistant.start() }
 
   function start() {
     if (!text.trim()) return alert('Please tell AgriReuse what you have first.')
@@ -84,19 +76,19 @@ export default function App() {
     if (pending && text.trim()) begin()
     setPending(false)
   }
-  const openAuth = (mode) => { voice.stop(); setAuthMode(mode); setPending(false); setOverlay('auth') }
+  const openAuth = (mode) => { assistant.stop(); setAllVoice(false); voice.stop(); setAuthMode(mode); setPending(false); setOverlay('auth') }
   const inProgress = (step === 1 && Object.keys(answers).length > 0) || (step >= 3 && (paid.seller || paid.buyer) && stage < 3)
   const canBack = !!overlay || step === 1 || step === 2 || (step === 3 && !paid.seller && !paid.buyer) || step === 4
   function goHome() {
-    voice.stop()
+    assistant.stop(); voice.stop()
     if (inProgress && !window.confirm('Leave this page? Your progress on this listing or trade will be lost in the demo.')) return
     setOverlay(null); reset()
   }
-  function goBack() { voice.stop(); if (overlay) setOverlay(null); else setStep(step - 1) }
+  function goBack() { assistant.stop(); voice.stop(); if (overlay) setOverlay(null); else setStep(step - 1) }
   function leave() { logOut(); setUser(null); setOverlay(null); reset() }
 
-  const update = (k, v) => setListing({ ...listing, [k]: v })
-  const reset = () => { voice.stop(); setRole('seller'); setPickup(null); setDelivery(null); setActualQty(''); setCarrierNote(''); setQualityIssue(false); setQualityAccepted(false); setPin(''); setNotices([]); setDraftQty(''); setDraftNote(''); setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
+  const update = (k, v) => { if (allVoice) assistant.stop(); setListing({ ...listing, [k]: v }) }
+  const reset = (keepVoice = false) => { assistant.stop(); setAllVoice(keepVoice === true); if (keepVoice === true) assistant.resume(); voice.stop(); setRole('seller'); setPickup(null); setDelivery(null); setActualQty(''); setCarrierNote(''); setQualityIssue(false); setQualityAccepted(false); setPin(''); setNotices([]); setDraftQty(''); setDraftNote(''); setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
 
   function recordCarrier(delivered = false) {
     const qty = Number(actualQty)
@@ -111,6 +103,36 @@ export default function App() {
     setActualQty(''); setCarrierNote(''); setQualityIssue(false); setPin('')
   }
   const disputedQuality = (pickup?.quality || delivery?.quality) && !qualityAccepted
+
+  const assistant = useListingConversation({
+    enabled: allVoice, step, overlay, user, listing, answers, agreed, matches, flags,
+    role, paid, funded, stage, change, pickup, delivered: delivery, qualityAccepted,
+    agreedQty, settlement: s,
+  }, {
+    setListening,
+    enable: () => setAllVoice(true),
+    navigate: (command) => { if (command === 'home') reset(); else { assistant.stop(); if (canBack) { if (overlay) setOverlay(null); else setStep((n) => Math.max(0, n - 1)) } } },
+    openSignup: () => { setPending(true); setAuthMode('signup'); setOverlay('auth') },
+    describe: (description, parsed) => { setText(description); setListing(parsed); setAnswers({}); setAgreed([]); setStep(1) },
+    edit: (l) => { setListing(l); setAnswers({}); setAgreed([]) },
+    answer: (id, value) => setAnswers((a) => ({ ...a, [id]: value })),
+    agree: (i) => setAgreed((a) => a.includes(i) ? a : [...a, i]),
+    publish: (l, a, f, m) => { setListing(l); setAnswers(a); setFlags(f); setMatches(m); setStep(2) },
+    review: () => { setAnswers({}); setAgreed([]); setStep(1) },
+    reset,
+    select: (m) => { setSel(m); setStep(3) },
+    role: setRole,
+    pay: (r) => { const n = { ...paid, [r]: true }; setPaid(n); if (n.seller && n.buyer) setStep(4) },
+    delivery: () => setStep(4),
+    acceptChange: () => setChange({ ...change, status: 'accepted' }),
+    acceptQuality: () => setQualityAccepted(true),
+    carrier: (report, delivered) => {
+      if (delivered) { setDelivery(report); setStage(2) } else { setPickup(report); setStage(1) }
+      setNotices((n) => [...n, { ...report, event: delivered ? 'Delivery' : 'Pickup', time: new Date().toLocaleTimeString() }])
+      if (report.quality) setQualityAccepted(false)
+    },
+    release: () => { if (funded && stage === 2 && role === 'carrier' && !disputedQuality) setStage(3) },
+  })
 
   return (
     <div className="app">
@@ -132,6 +154,15 @@ export default function App() {
       </header>
 
       <main className="main">
+        {allVoice && <section className="conversation-bar" aria-label="Voice conversation">
+          <strong>{listening ? '🎙️ Listening…' : assistant.paused ? 'Voice paused' : '🔊 Voice conversation'}</strong>
+          <p role="status" aria-live="polite">{assistant.status}</p>
+          <div className="row">
+            {assistant.paused ? <button className="match-button" onClick={assistant.resume}>Resume voice</button> : <button className="match-button" onClick={assistant.stop}>Pause voice</button>}
+            <button className="link" onClick={() => { assistant.stop(); setAllVoice(false); setVoiceMode(false) }}>Use screen instead</button>
+          </div>
+          <small>Speak after the question finishes. Say repeat, pause, back, or home. Passwords and photos use the screen.</small>
+        </section>}
         {(overlay || step > 0) && (
           <div className="navrow">
             {canBack && <button className="link" onClick={goBack}>← Back</button>}
@@ -159,7 +190,7 @@ export default function App() {
               <div className="agent-icon">🎙️</div>
               <h2>What do you have?</h2>
               <p>Speak naturally. Tell us what you have, how much, and when it needs to be collected.</p>
-              <button className="voice-button" onClick={speak}>{listening ? '🔴 Listening…' : '🎙️ Talk to AgriReuse'}</button>
+              <button className="voice-button" onClick={speak}>{listening ? '🔴 Listening…' : '🎙️ Create a listing by voice'}</button>
               <div className="divider"><span>or type instead</span></div>
               <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. I've got 300kg of overripe bananas that need collecting within 3 days..." />
               <div className="chips">
@@ -196,8 +227,8 @@ export default function App() {
 
             <h3>NZ rules for {cat.label.toLowerCase()}</h3>
             <div className="voice-tools">
-              <label className="check"><input type="checkbox" checked={voiceMode} onChange={(e) => { setVoiceMode(e.target.checked); if (!e.target.checked) voice.stop() }} /><span>Use voice for the NZ rules questions</span></label>
-              {voiceMode && <>
+              <label className="check"><input type="checkbox" checked={voiceMode} onChange={(e) => { setVoiceMode(e.target.checked); if (!e.target.checked) { voice.stop(); assistant.stop(); setAllVoice(false) } }} /><span>Use voice for the NZ rules questions</span></label>
+              {voiceMode && !allVoice && <>
                 <button className="match-button" onClick={() => voice.read(0)}>🎙️ Read questions aloud</button>
                 {voice.active >= 0 && <div className="row"><button className="match-button" onClick={() => voice.read(voice.active)}>Repeat question</button><button className="match-button" onClick={voice.listen}>Speak my answer</button><button className="link" onClick={voice.stop}>Stop voice</button></div>}
                 {voice.heard && <button className="accept-button" onClick={() => voice.answer(voice.active, voice.heard)}>Confirm: {voice.heard === 'unsure' ? 'Not sure' : voice.heard}</button>}
@@ -206,11 +237,11 @@ export default function App() {
             </div>
             <p className="muted">Answer honestly. Buyers see your answers, and some answers stop a listing going live.</p>
             {cat.questions.map((q, index) => (
-              <div className={"q " + (voice.active === index ? "voice-active" : "")} key={q.id}>
+              <div className={"q " + ((allVoice ? assistant.question : voice.active) === index ? "voice-active" : "")} key={q.id}>
                 <p>{q.text}<small>{q.law}</small>{answers[q.id] === 'yes' && q.help && <em>{q.help}</em>}</p>
                 <div className="seg">
                   {['no', 'unsure', 'yes'].map((v) => (
-                    <button key={v} className={answers[q.id] === v ? 'on ' + v : ''} onClick={() => voice.answer(index, v)}>{v === 'unsure' ? 'Not sure' : v[0].toUpperCase() + v.slice(1)}</button>
+                    <button key={v} className={answers[q.id] === v ? 'on ' + v : ''} onClick={() => { if (allVoice) assistant.stop(); voice.answer(index, v) }}>{v === 'unsure' ? 'Not sure' : v[0].toUpperCase() + v.slice(1)}</button>
                   ))}
                 </div>
               </div>
@@ -219,7 +250,7 @@ export default function App() {
             <h3>Your responsibilities</h3>
             {declarations.map((d, i) => (
               <label className="check" key={i}>
-                <input type="checkbox" checked={agreed.includes(i)} onChange={() => setAgreed(agreed.includes(i) ? agreed.filter((x) => x !== i) : [...agreed, i])} />
+                <input type="checkbox" checked={agreed.includes(i)} onChange={() => { if (allVoice) assistant.stop(); setAgreed(agreed.includes(i) ? agreed.filter((x) => x !== i) : [...agreed, i]) }} />
                 <span>{d}</span>
               </label>
             ))}
