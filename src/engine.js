@@ -16,10 +16,13 @@ export function parseListing(text) {
   }
   const d = t.match(/(\d+)\s*days?/)
   const mat = t.match(/(?:\bof\s+|(?:kg|kilos?|tonnes?|tons?|m3|m³|bales?)\s+)([a-z\s-]+?)(?:\s+(?:that|which|needing|need|to be|to collect)|[,.]|$)/)
-  const cat = /eggshell|egg shell/.test(t) ? 'eggshell' : /wool|fleece/.test(t) ? 'wool' : /wood|sawdust|shavings/.test(t) ? 'wood' : /manure|compost|effluent|mulch/.test(t) ? 'organic' : /meat|bone|blood|offal|whey|fish/.test(t) ? 'animal' : 'plant'
+  const cat = /eggshell|egg shell/.test(t) ? 'eggshell' : /wool|fleece/.test(t) ? 'wool' : /wood|sawdust|shavings/.test(t) ? 'wood' : /manure|compost|effluent|mulch/.test(t) ? 'organic' : /animal|meat|bone|blood|offal|whey|fish/.test(t) ? 'animal' : 'plant'
+  const fallback = {plant:'surplus plant material',animal:'surplus animal product',wood:'surplus untreated wood material',wool:'surplus wool material',eggshell:'surplus eggshell material',organic:'surplus organic material'}
+  const namedProduce = t.match(/\b((?:(?:overripe|ripe|unripe|surplus|bruised|damaged|spent)\s+)*(?:bananas?|apples?|pears?|oranges?|carrots?|potatoes|tomatoes|mushrooms?))\b/)
+  const material = mat?.[1].trim().replace(/^of\s+/, '') || namedProduce?.[1] || fallback[cat]
   const base = categories[cat].price
   return {
-    material: mat ? mat[1].trim().replace(/^of\s+/, '') : 'surplus material', cat, quantity, unit,
+    material, cat, quantity, unit,
     collectDays: d ? +d[1] : 7,
     price: unit === 'm³' ? 25 : unit === 'bales' ? 20 : base,
   }

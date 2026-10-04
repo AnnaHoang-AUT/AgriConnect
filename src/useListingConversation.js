@@ -59,12 +59,17 @@ export function useListingConversation(state, actions) {
           const correct=await yes(`Your listing is ${l.quantity} ${l.unit} of ${l.material}. Category: ${categories[l.cat].label}. Price: ${money(l.price)} per ${l.unit}. Collect within ${l.collectDays} days. Is this correct?`)
           if(correct==='yes') break
           l.material=await confirmed('What is the material?',raw=>raw.trim())
+          act.edit({...l})
           const options=categoryKeys.map((k,i)=>`${i+1}, ${categories[k].label}`).join('. ')
           l.cat=await confirmed(`Choose a category by name or number. ${options}.`,categoryVoice,k=>categories[k].label)
+          act.edit({...l})
           l.quantity=await number(`How many ${l.unit}?`,0.000001)
+          act.edit({...l})
           l.price=await number(`What is the price in dollars per ${l.unit}? Say zero for free.`,0)
+          act.edit({...l})
           l.collectDays=await number('Within how many days should it be collected?',1)
-          a={};agreed=[];act.edit(l)
+          act.edit({...l})
+          a={};agreed=[];act.edit({...l})
           if(attempts===2) throw new Error('Listing review paused. Tap Resume voice to check the revised details.')
         }
         await v.say('Now answer the main checks. Say yes, no, or not sure. I will ask you to confirm each answer. The full rules stay on screen.')
