@@ -10,10 +10,10 @@ export function currentUser() {
   const e = read(SESSION, null)
   return e ? read(USERS, {})[e] ?? null : null
 }
-export async function signUp({ name, farm, email, password }) {
+export async function signUp({ name, farm, nzbn, email, password }) {
   const users = read(USERS, {}), key = email.trim().toLowerCase()
   if (users[key]) throw new Error('An account with this email already exists. Log in instead.')
-  const user = { name: name.trim(), farm: farm.trim(), email: key, pass: await hash(password), member: false, interests: [] }
+  const user = { name: name.trim(), farm: farm.trim(), nzbn: nzbn.replace(/\s/g, ''), email: key, pass: await hash(password), member: false, interests: [] }
   users[key] = user
   localStorage.setItem(USERS, JSON.stringify(users))
   localStorage.setItem(SESSION, JSON.stringify(key))

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import './App.css'
 import { categories, declarations, deliveryRules, farms, FEE } from './data'
 import { AuthPanel, AccountPanel } from './Account'
+import { LegalModal } from './Legal'
 import { currentUser, logOut } from './auth'
 import { parseListing, evaluate, findMatches, nearbyBuyers, settle, money, disposalSaving } from './engine'
 
@@ -26,6 +27,8 @@ export default function App() {
   const [listening, setListening] = useState(false)
   const [user, setUser] = useState(currentUser)
   const [overlay, setOverlay] = useState(null) // null | 'auth' | 'account'
+  const [legal, setLegal] = useState(null) // null | 'terms' | 'privacy'
+  const [pending, setPending] = useState(false)
 
   const cat = listing && categories[listing.cat]
   const allAnswered = cat && cat.questions.every((q) => answers[q.id])
@@ -47,9 +50,11 @@ export default function App() {
 
   function start() {
     if (!text.trim()) return alert('Please tell AgriReuse what you have first.')
-    if (!user) return setOverlay('auth')
-    setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1)
+    if (!user) { setPending(true); return setOverlay('auth') }
+    begin()
   }
+
+  function begin() { setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1) }
 
   function submitListing() {
     const f = evaluate(listing, answers)
@@ -61,36 +66,51 @@ export default function App() {
   function signedIn(u) {
     setUser(u)
     setOverlay(null)
-    if (text.trim() && !listing) { setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1) }
+    if (pending && text.trim()) begin()
+    setPending(false)
   }
+  const openAuth = () => { setPending(false); setOverlay('auth') }
+  const inProgress = (step === 1 && Object.keys(answers).length > 0) || (step >= 3 && (paid.seller || paid.buyer) && stage < 3)
+  const canBack = !!overlay || step === 1 || step === 2 || (step === 3 && !paid.seller && !paid.buyer)
+  function goHome() {
+    if (inProgress && !window.confirm('Leave this page? Your progress on this listing or trade will be lost in the demo.')) return
+    setOverlay(null); reset()
+  }
+  function goBack() { if (overlay) setOverlay(null); else setStep(step - 1) }
   function leave() { logOut(); setUser(null); setOverlay(null); reset() }
 
   const update = (k, v) => setListing({ ...listing, [k]: v })
-  const reset = () => { setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null) }
+  const reset = () => { setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
 
   return (
     <div className="app">
       <header className="header">
-        <div className="brand"><span className="logo">🌱</span><span>AgriReuse</span></div>
+        <button className="brand" onClick={goHome} aria-label="AgriReuse home"><span className="logo">🌱</span><span>AgriReuse</span></button>
         <nav className="acct">
           {user ? (
             <button className="demo-badge" onClick={() => setOverlay('account')}>{user.member ? '🔔 ' : ''}{user.farm}</button>
           ) : (
             <>
-              <button className="link" onClick={() => setOverlay('auth')}>Log in</button>
-              <button className="demo-badge" onClick={() => setOverlay('auth')}>Sign up free</button>
+              <button className="link" onClick={openAuth}>Log in</button>
+              <button className="demo-badge" onClick={openAuth}>Sign up free</button>
             </>
           )}
         </nav>
       </header>
 
       <main className="main">
-        {overlay === 'auth' && <AuthPanel onDone={signedIn} note={text.trim() && !user ? 'Create a free account to publish your listing. We kept what you typed.' : ''} />}
+        {(overlay || step > 0) && (
+          <div className="navrow">
+            {canBack && <button className="link" onClick={goBack}>← Back</button>}
+            <button className="link" onClick={goHome}>⌂ Home</button>
+          </div>
+        )}
+        {overlay === 'auth' && <AuthPanel onLegal={setLegal} onDone={signedIn} note={pending && text.trim() ? 'Create a free account to publish your listing. We kept what you typed.' : ''} />}
         {overlay === 'account' && user && <AccountPanel user={user} onChange={setUser} onBack={() => setOverlay(null)} onLogout={leave} />}
         {!overlay && step > 0 && (
           <ol className="steps">
             {STEPS.map((n, i) => (
-              <li key={n} className={i === step - 1 ? 'on' : i < step - 1 ? 'done' : ''}>{i < step - 1 ? '✓' : i + 1} {n}</li>
+              <li key={n} className={i === step ? 'on' : i < step ? 'done' : ''}>{i < step ? '✓' : i + 1} {n}</li>
             ))}
           </ol>
         )}
@@ -99,7 +119,7 @@ export default function App() {
           <>
             <section className="hero">
               <p className="eyebrow">AI-POWERED FARM RESOURCE EXCHANGE</p>
-              <h1>Turn farm waste into<span> opportunity.</span></h1>
+              <h1>Turn farm surplus into<span> opportunity.</span></h1>
               <p className="subtitle">Tell AgriReuse what you have left over. Our AI helps find who can use it and whether the exchange makes sense.</p>
             </section>
             <section className="agent-card">
@@ -325,6 +345,13 @@ export default function App() {
           </section>
         )}
       </main>
+
+      <footer className="foot">
+        <button className="link" onClick={() => setLegal('terms')}>Terms of Use</button>
+        <button className="link" onClick={() => setLegal('privacy')}>Privacy Policy</button>
+        <span>Demo prototype</span>
+      </footer>
+      {legal && <LegalModal tab={legal} setTab={setLegal} onClose={() => setLegal(null)} />}
     </div>
   )
 }
