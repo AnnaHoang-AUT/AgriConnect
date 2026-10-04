@@ -42,7 +42,7 @@ export default function App() {
   }
 
   function start() {
-    if (!text.trim()) return alert('Please tell AgriConnect what you have first.')
+    if (!text.trim()) return alert('Please tell AgriReuse what you have first.')
     setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1)
   }
 
@@ -59,7 +59,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="brand"><span className="logo">🌱</span><span>AgriConnect</span></div>
+        <div className="brand"><span className="logo">🌱</span><span>AgriReuse</span></div>
         <span className="demo-badge">Member · ${FEE.membership}/yr + {FEE.rate * 100}% per trade</span>
       </header>
 
@@ -76,14 +76,14 @@ export default function App() {
           <>
             <section className="hero">
               <p className="eyebrow">AI-POWERED FARM RESOURCE EXCHANGE</p>
-              <h1>Turn farm surplus into<span> opportunity.</span></h1>
-              <p className="subtitle">Tell AgriConnect what you have left over. Our AI helps find who can use it and whether the exchange makes sense.</p>
+              <h1>Turn farm waste into<span> opportunity.</span></h1>
+              <p className="subtitle">Tell AgriReuse what you have left over. Our AI helps find who can use it and whether the exchange makes sense.</p>
             </section>
             <section className="agent-card">
               <div className="agent-icon">🎙️</div>
               <h2>What do you have?</h2>
               <p>Speak naturally. Tell us what you have, how much, and when it needs to be collected.</p>
-              <button className="voice-button" onClick={speak}>{listening ? '🔴 Listening…' : '🎙️ Talk to AgriConnect'}</button>
+              <button className="voice-button" onClick={speak}>{listening ? '🔴 Listening…' : '🎙️ Talk to AgriReuse'}</button>
               <div className="divider"><span>or type instead</span></div>
               <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. I've got 300kg of overripe bananas that need collecting within 3 days..." />
               <div className="chips">
@@ -230,7 +230,7 @@ export default function App() {
             <div className="ledger">
               <div><span>Buyer pays for goods (held)</span><strong>{money(s.buyerPays)}</strong></div>
               <div><span>Seller pays transport (held, refunded)</span><strong>{money(s.transport)}</strong></div>
-              <div><span>AgriConnect fee ({FEE.rate * 100}% of goods)</span><strong>−{money(s.fee)}</strong></div>
+              <div><span>AgriReuse fee ({FEE.rate * 100}% of goods)</span><strong>−{money(s.fee)}</strong></div>
               <div className="total"><span>Seller receives after delivery</span><strong>{money(s.sellerGets)} + {money(s.transport)} refund</strong></div>
             </div>
 
