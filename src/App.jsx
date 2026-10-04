@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import { Hub, AlertChoice } from './Hub'
+import { usePortfolio } from './usePortfolio'
+import { TABS, PLACES, uid, matching, approveAlerts, alertRecipients, impactFor } from './portfolio'
 import { useRuleVoice } from './useRuleVoice'
 import { useListingConversation } from './useListingConversation'
 import { categories, declarations, deliveryRules, farms, FEE } from './data'
 import { AuthPanel, AccountPanel } from './Account'
 import { LegalModal } from './Legal'
 import { currentUser, logOut } from './auth'
-import { parseListing, evaluate, findMatches, nearbyBuyers, settle, money, disposalSaving } from './engine'
+import { parseListing, evaluate, settle, money, disposalSaving } from './engine'
 
 const STEPS = ['Describe', 'Check rules', 'Match', 'Pay', 'Deliver']
 const TRACK = ['Funds held', 'Dispatched', 'Delivered', 'Paid out']
@@ -43,13 +46,39 @@ export default function App() {
   const [notices, setNotices] = useState([])
   const [pending, setPending] = useState(false)
 
+  const [tab, setTab] = useState('Create Listing')
+  const [history, setHistory] = useState([])
+  const [tradeId, setTradeId] = useState(null)
+  const {portfolio, update: updatePortfolio, storageError} = usePortfolio(user?.email)
+  const savedListing = portfolio.listings.find(l=>l.id===listing?.id) || listing
+  const activeTrade = portfolio.transactions.find(t=>t.id===tradeId)
+  const blockedTrade = ['Disputed','Cancelled'].includes(activeTrade?.status)
+  function goTab(next) { assistant.stop(); voice.stop(); setOverlay(null); setHistory(h=>[...h,tab]); setTab(next) }
+  function publishRecord(l,a,f) {
+    const now=new Date(),until=new Date(now);until.setDate(until.getDate()+l.collectDays)
+    const record={...l,id:l.id||uid(),type:'Supply',owner:user.email,business:user.farm,location:l.location||'Northland',from:now.toISOString().slice(0,10),until:until.toISOString().slice(0,10),createdAt:l.createdAt||now.toISOString(),flags:f,answers:a,status:f.hold?'On hold':'Live',archived:false,alertChoice:undefined}
+    const next={...portfolio,listings:[record,...portfolio.listings.filter(x=>x.id!==record.id)],notifications:[{id:uid(),text:`${record.material}: ${record.status==='Live'?'listing published':'listing saved on hold'}.`,listingId:record.id,tab:'Marketplace',read:false,createdAt:now.toISOString()},...portfolio.notifications]}
+    updatePortfolio(()=>next);setListing(record);setAnswers(a);setFlags(f);setMatches(matching(record,next));setStep(2)
+  }
+  function beginTrade(l,m) {
+    const supply=m.supply||l
+    setListing(supply);setFlags(supply.flags||{hold:false,nofeed:false,unsure:[]});setAnswers(supply.answers||{});setSel(m);setTradeId(uid());setPaid({seller:false,buyer:false});setStage(0);setPickup(null);setDelivery(null);setChange(null);setQualityAccepted(false);setNotices([]);setTab('Create Listing');setStep(3);setRole(l.type==='Demand'?'buyer':'seller')
+  }
+  function openTrade(t) {
+    assistant.stop();setAllVoice(false);setTradeId(t.id);setListing(t.listing);setSel(t.match);setFlags(t.listing.flags||{hold:false,nofeed:false,unsure:[]});setPaid(t.paid);setStage(t.stage);setRole(t.role||'seller');setPickup(t.pickup||null);setDelivery(t.delivery||null);setChange(t.change||null);setNotices(t.notices||[]);setQualityAccepted(t.qualityAccepted||false);setTab('Create Listing');setStep(t.paid.seller&&t.paid.buyer?4:3)
+  }
+  function alerts(l,choice) {updatePortfolio(p=>approveAlerts(p,l,choice))}
+  function changeTradeStatus(t,status) {
+    assistant.stop();setAllVoice(false)
+    updatePortfolio(p=>({...p,transactions:p.transactions.map(x=>x.id===t.id?{...x,status,...(status==='Cancelled'?{settlement:{...x.settlement,releasedGoods:0,sellerGets:0,fee:0,buyerRefund:x.paid.buyer?x.settlement.buyerPays:0,transport:x.paid.seller?x.settlement.transport:0,quantity:0,releasePercent:0}}:{}),log:[...x.log,{text:status==='Cancelled'?'Cancelled before pickup; both held demo payments refunded in full.':status,at:new Date().toISOString()}]}:x),listings:p.listings.map(l=>l.id===t.listingId?{...l,status:status==='Cancelled'?'Live':'In trade'}:l)}))
+  }
   const cat = listing && categories[listing.cat]
   const voice = useRuleVoice(cat?.questions || [], (id, value) => setAnswers((a) => ({ ...a, [id]: value })))
   const allAnswered = cat && cat.questions.every((q) => answers[q.id])
   const ready = allAnswered && agreed.length === declarations.length && listing.quantity > 0 && Number.isFinite(listing.quantity) && listing.price >= 0 && Number.isFinite(listing.price) && listing.collectDays > 0 && listing.material.trim()
   const agreedQty = change?.status === 'accepted' ? change.qty : listing?.quantity
   const goods = sel ? Math.round(listing.quantity * listing.price * 100) / 100 : 0
-  const s = sel ? settle(goods, sel.route.cost, listing.quantity, pickup?.qty ?? agreedQty, delivery?.qty ?? pickup?.qty ?? agreedQty) : null
+  const s = useMemo(()=>sel ? settle(goods, sel.route.cost, listing.quantity, pickup?.qty ?? agreedQty, delivery?.qty ?? pickup?.qty ?? agreedQty) : null,[sel,goods,listing?.quantity,pickup,delivery,agreedQty])
   const funded = paid.seller && paid.buyer
 
   function speak() { voice.stop(); setVoiceMode(true); assistant.start() }
@@ -65,9 +94,7 @@ export default function App() {
   function submitListing() {
     voice.stop()
     const f = evaluate(listing, answers)
-    setFlags(f)
-    setMatches(f.hold ? [] : findMatches(listing, f))
-    setStep(2)
+    publishRecord(listing,answers,f)
   }
 
   function signedIn(u) {
@@ -78,17 +105,17 @@ export default function App() {
   }
   const openAuth = (mode) => { assistant.stop(); setAllVoice(false); voice.stop(); setAuthMode(mode); setPending(false); setOverlay('auth') }
   const inProgress = (step === 1 && Object.keys(answers).length > 0) || (step >= 3 && (paid.seller || paid.buyer) && stage < 3)
-  const canBack = !!overlay || step === 1 || step === 2 || (step === 3 && !paid.seller && !paid.buyer) || step === 4
+  const canBack = tab !== 'Create Listing' || !!overlay || step === 1 || step === 2 || (step === 3 && !paid.seller && !paid.buyer) || step === 4
   function goHome() {
     assistant.stop(); voice.stop()
-    if (inProgress && !window.confirm('Leave this page? Your progress on this listing or trade will be lost in the demo.')) return
-    setOverlay(null); reset()
+    if (inProgress && !window.confirm('Leave this page? Your published listings and trades are saved in this browser. Leave the current screen?')) return
+    setOverlay(null); setTab('Create Listing'); reset()
   }
-  function goBack() { assistant.stop(); voice.stop(); if (overlay) setOverlay(null); else setStep(step - 1) }
-  function leave() { logOut(); setUser(null); setOverlay(null); reset() }
+  function goBack() { assistant.stop(); voice.stop(); if (overlay) setOverlay(null); else if(tab!=='Create Listing'){setTab(history.at(-1)||'Create Listing');setHistory(h=>h.slice(0,-1))} else setStep(step - 1) }
+  function leave() { logOut(); setUser(null); setOverlay(null); setTab('Create Listing'); reset() }
 
   const update = (k, v) => { if (allVoice) assistant.stop(); setListing({ ...listing, [k]: v }) }
-  const reset = (keepVoice = false) => { assistant.stop(); setAllVoice(keepVoice === true); if (keepVoice === true) assistant.resume(); voice.stop(); setRole('seller'); setPickup(null); setDelivery(null); setActualQty(''); setCarrierNote(''); setQualityIssue(false); setQualityAccepted(false); setPin(''); setNotices([]); setDraftQty(''); setDraftNote(''); setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
+  const reset = (keepVoice = false) => { assistant.stop(); setAllVoice(keepVoice === true); if (keepVoice === true) assistant.resume(); voice.stop(); setTradeId(null); setRole('seller'); setPickup(null); setDelivery(null); setActualQty(''); setCarrierNote(''); setQualityIssue(false); setQualityAccepted(false); setPin(''); setNotices([]); setDraftQty(''); setDraftNote(''); setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
 
   function recordCarrier(delivered = false) {
     const qty = Number(actualQty)
@@ -105,9 +132,9 @@ export default function App() {
   const disputedQuality = (pickup?.quality || delivery?.quality) && !qualityAccepted
 
   const assistant = useListingConversation({
-    enabled: allVoice, step, overlay, user, listing, answers, agreed, matches, flags,
+    enabled: allVoice && tab==='Create Listing' && !blockedTrade, step, overlay, user, listing, answers, agreed, matches, flags,
     role, paid, funded, stage, change, pickup, delivered: delivery, qualityAccepted,
-    agreedQty, settlement: s,
+    agreedQty, settlement: s, alertChoice:savedListing?.alertChoice, alertCount:listing?alertRecipients(listing,portfolio).length:0,
   }, {
     setListening,
     enable: () => setAllVoice(true),
@@ -117,10 +144,12 @@ export default function App() {
     edit: (l) => { setListing(l); setAnswers({}); setAgreed([]) },
     answer: (id, value) => setAnswers((a) => ({ ...a, [id]: value })),
     agree: (i) => setAgreed((a) => a.includes(i) ? a : [...a, i]),
-    publish: (l, a, f, m) => { setListing(l); setAnswers(a); setFlags(f); setMatches(m); setStep(2) },
+    publish: publishRecord,
+    alert: choice=>alerts(listing,choice),
+    cancel: ()=>{changeTradeStatus(activeTrade,'Cancelled');reset(true)},
     review: () => { setAnswers({}); setAgreed([]); setStep(1) },
     reset,
-    select: (m) => { setSel(m); setStep(3) },
+    select: (m) => beginTrade(listing,m),
     role: setRole,
     pay: (r) => { const n = { ...paid, [r]: true }; setPaid(n); if (n.seller && n.buyer) setStep(4) },
     delivery: () => setStep(4),
@@ -131,8 +160,18 @@ export default function App() {
       setNotices((n) => [...n, { ...report, event: delivered ? 'Delivery' : 'Pickup', time: new Date().toLocaleTimeString() }])
       if (report.quality) setQualityAccepted(false)
     },
-    release: () => { if (funded && stage === 2 && role === 'carrier' && !disputedQuality) setStage(3) },
+    release: () => { if (funded && stage === 2 && role === 'carrier' && !disputedQuality && !blockedTrade) setStage(3) },
   })
+
+  useEffect(()=>{
+    if(!tradeId || !user || !listing || !sel || blockedTrade)return
+    const now=new Date().toISOString(), status=stage===3?'Completed':stage===2?'Delivered':stage===1?'Dispatched':funded?'Funds held':'Awaiting payment'
+    updatePortfolio(p=>{
+      const old=p.transactions.find(t=>t.id===tradeId),event=old?.status!==status||JSON.stringify(old?.pickup)!==JSON.stringify(pickup)||JSON.stringify(old?.delivery)!==JSON.stringify(delivery)||JSON.stringify(old?.paid)!==JSON.stringify(paid)
+      const record={...old,id:tradeId,owner:user.email,listingId:listing.id,listing,match:sel,buyer:sel.buyer.name,location:listing.location,km:sel.route.km,paid,stage,role,change,pickup,delivery,qualityAccepted,notices,settlement:s,quantity:s.quantity,status,createdAt:old?.createdAt||now,completedAt:stage===3?(old?.completedAt||now):undefined,log:event?[...(old?.log||[]),{text:`${status}${delivery?' · Delivered '+delivery.qty+' '+listing.unit:pickup?' · Picked up '+pickup.qty+' '+listing.unit:''}`,at:now}]:old.log}
+      return {...p,notifications:old?.status!==status?[{id:uid(),text:`${listing.material}: ${status}.`,tab:'Transactions',tradeId,read:false,createdAt:now},...p.notifications]:p.notifications,transactions:[record,...p.transactions.filter(t=>t.id!==tradeId)],listings:p.listings.map(l=>l.id===listing.id?{...l,status:stage===3?'Completed':'In trade'}:l)}
+    })
+  },[tradeId,user,stage,paid,role,change,pickup,delivery,qualityAccepted,notices,listing,sel,s,funded,blockedTrade,updatePortfolio])
 
   return (
     <div className="app">
@@ -141,7 +180,7 @@ export default function App() {
         <nav className="acct" aria-label="Main navigation">
           <button className="link" onClick={goHome}>Home</button>
           {canBack && <button className="link" onClick={goBack}>← Back</button>}
-          {!overlay && step > 0 && <span className="nav-status">{STEPS[step]}</span>}
+          {!overlay && tab==='Create Listing' && step > 0 && <span className="nav-status">{STEPS[step]}</span>}
           {user ? (
             <button className="demo-badge" onClick={() => { voice.stop(); setOverlay('account') }}>{user.member ? '🔔 ' : ''}{user.farm}</button>
           ) : (
@@ -151,10 +190,21 @@ export default function App() {
             </>
           )}
         </nav>
+        <nav className="section-tabs" aria-label="AgriReuse sections">{TABS.map(t=><button key={t} className={tab===t?'selected':''} onClick={()=>goTab(t)}>{t}</button>)}</nav>
       </header>
 
-      <main className="main">
-        {allVoice && <section className="conversation-bar" aria-label="Voice conversation">
+      <main className={'main '+(tab!=='Create Listing'?'hub-main':'')}>
+        {storageError&&<p className="warning" role="alert">{storageError}</p>}
+        {!overlay&&tab!=='Create Listing'&&<Hub tab={tab} portfolio={portfolio} user={user||{email:null,farm:'visitor'}} onGo={goTab} onSignIn={()=>openAuth('login')} onOpen={openTrade} onTrade={beginTrade}
+          onEdit={l=>{assistant.stop();setAllVoice(false);setTradeId(null);setListing(l);setAnswers({});setAgreed([]);setTab('Create Listing');setStep(1)}}
+          onArchive={id=>updatePortfolio(p=>({...p,listings:p.listings.map(x=>x.id===id?{...x,archived:!x.archived}:x)}))}
+          onDelete={id=>updatePortfolio(p=>({...p,listings:p.listings.filter(x=>x.id!==id)}))}
+          onAlert={alerts} onSaveRequest={l=>{updatePortfolio(p=>({...p,listings:[l,...p.listings.filter(x=>x.id!==l.id)]}));goTab('Matches')}}
+          onOffer={o=>updatePortfolio(p=>({...p,offers:[{...o,id:uid(),status:'Pending',createdAt:new Date().toISOString()},...p.offers]}))}
+          onCancelTrade={t=>changeTradeStatus(t,'Cancelled')} onDispute={t=>changeTradeStatus(t,'Disputed')} onResolve={t=>{updatePortfolio(p=>({...p,transactions:p.transactions.map(x=>x.id===t.id?{...x,status:t.stage===2?'Delivered':t.stage===1?'Dispatched':t.paid.seller&&t.paid.buyer?'Funds held':'Awaiting payment',log:[...x.log,{text:'Dispute resolved by both demo parties; release still requires carrier confirmation.',at:new Date().toISOString()}]}:x)}))}}
+          onWithdrawOffer={id=>updatePortfolio(p=>({...p,offers:p.offers.map(o=>o.id===id?{...o,status:'Withdrawn'}:o)}))}
+          onMarkRead={id=>updatePortfolio(p=>({...p,notifications:p.notifications.map(n=>n.id===id?{...n,read:true}:n)}))}/>}
+        {allVoice && tab==='Create Listing' && <section className="conversation-bar" aria-label="Voice conversation">
           <strong>{listening ? '🎙️ Listening…' : assistant.paused ? 'Voice paused' : '🔊 Voice conversation'}</strong>
           <p role="status" aria-live="polite">{assistant.status}</p>
           <div className="row">
@@ -171,7 +221,7 @@ export default function App() {
         )}
         {overlay === 'auth' && <AuthPanel key={authMode} initialMode={authMode} onLegal={setLegal} onDone={signedIn} note={pending && text.trim() ? 'Create a free account to publish your listing. We kept what you typed.' : ''} />}
         {overlay === 'account' && user && <AccountPanel user={user} onChange={setUser} onBack={() => setOverlay(null)} onLogout={leave} />}
-        {!overlay && step > 0 && (
+        {!overlay && tab==='Create Listing' && step > 0 && (
           <ol className="steps">
             {STEPS.map((n, i) => (
               <li key={n} className={i === step ? 'on' : i < step ? 'done' : ''}>{i < step ? '✓' : i + 1} {n}</li>
@@ -179,7 +229,7 @@ export default function App() {
           </ol>
         )}
 
-        {!overlay && step === 0 && (
+        {!overlay && tab==='Create Listing' && step === 0 && (
           <>
             <section className="hero">
               <p className="eyebrow">AI-POWERED FARM RESOURCE EXCHANGE</p>
@@ -207,7 +257,7 @@ export default function App() {
           </>
         )}
 
-        {!overlay && step === 1 && (
+        {!overlay && tab==='Create Listing' && step === 1 && (
           <section className="panel">
             <h2>Check your listing</h2>
             <p className="muted">We read this from what you said. Fix anything that looks wrong.</p>
@@ -221,6 +271,7 @@ export default function App() {
               <label>Amount ({listing.unit})<input type="number" value={listing.quantity} onChange={(e) => update('quantity', +e.target.value)} /></label>
               <label>Price per {listing.unit} ($)<input type="number" step="0.01" value={listing.price} onChange={(e) => update('price', +e.target.value)} /></label>
               <label>Collect within (days)<input type="number" value={listing.collectDays} onChange={(e) => update('collectDays', +e.target.value)} /></label>
+              <label>Pickup area<select value={listing.location||'Northland'} onChange={e=>update('location',e.target.value)}>{PLACES.map(p=><option key={p}>{p}</option>)}</select></label>
               <label>Photos<input type="file" accept="image/*" multiple /></label>
             </div>
             <p className="muted">Asking total: <strong>{money(listing.quantity * listing.price)}</strong> · Suggested: {money(cat.price)}/{listing.unit} based on similar listings.</p>
@@ -259,7 +310,7 @@ export default function App() {
           </section>
         )}
 
-        {!overlay && step === 2 && flags.hold && (
+        {!overlay && tab==='Create Listing' && step === 2 && flags.hold && (
           <section className="panel">
             <span className="tag red">Listing on hold</span>
             <h2>This can't be listed yet</h2>
@@ -273,7 +324,7 @@ export default function App() {
           </section>
         )}
 
-        {!overlay && step === 2 && !flags.hold && (
+        {!overlay && tab==='Create Listing' && step === 2 && !flags.hold && (
           <section className="match-result">
             <div className="result-heading">
               <div>
@@ -301,7 +352,7 @@ export default function App() {
                       <div><small>You avoid disposal</small><strong>~${m.sellerSaving}</strong></div>
                       {m.co2 > 0 && <div><small>CO₂e avoided</small><strong>~{m.co2} kg</strong></div>}
                     </div>
-                    {m.verify && <p className="warning">Buyer must confirm the material suits their use before it is used as feed.</p>}
+                    {m.verify && <><p className="warning">Buyer must confirm the material suits their use before trading.</p><label className="check"><input type="checkbox" checked={!!m.buyerVerified} onChange={e=>setMatches(ms=>ms.map(x=>x.d.id===m.d.id?{...x,buyerVerified:e.target.checked}:x))}/><span>Confirm suitability for the buyer's intended use</span></label></>}
                     <details><summary>Why this match</summary>
                       <ul className="list">
                         <li>Wants {categories[m.d.cat].label.toLowerCase()}, {m.d.min}–{m.d.max} {m.d.unit}</li>
@@ -309,39 +360,32 @@ export default function App() {
                         <li>Buyer saves ~${m.buyerSaving} against buying similar</li>
                       </ul>
                     </details>
-                    <button className="accept-button" onClick={() => { setSel(m); setStep(3) }}>Trade with {m.buyer.name}</button>
+                    <button className="accept-button" disabled={m.verify&&!m.buyerVerified} onClick={() => beginTrade(listing,m)}>Trade with {m.buyer.name}</button>
                   </article>
                 ))}
                 <p className="demo-note">Estimates from synthetic demo data.</p>
               </>
             ) : (
               <div className="match-card compact">
-                <h3>No match yet, but your listing is live</h3>
-                <p className="muted">We've alerted {nearbyBuyers(listing.cat).length} nearby subscribed members who follow this category.</p>
-                {nearbyBuyers(listing.cat).map((f) => (
-                  <div className="notice" key={f.id}>
-                    <strong>{f.name}</strong> <small>{f.type} · {f.km} km away</small>
-                    <p>“{listing.quantity} {listing.unit} of {listing.material} is available near you for {money(listing.quantity * listing.price)}. Could suit: {cat.uses[0].toLowerCase()}. {cat.benefit}”</p>
-                  </div>
-                ))}
-                <p className="muted small">Likely uses: {cat.uses.join('; ')}. We'll message you when someone replies.</p>
+                <AlertChoice listing={savedListing} portfolio={portfolio} onChoice={choice=>alerts(listing,choice)}/>
                 <button className="match-button" onClick={reset}>Create another listing</button>
               </div>
             )}
           </section>
         )}
 
-        {!overlay && step >= 3 && sel && (
+        {!overlay && tab==='Create Listing' && step >= 3 && sel && (
           <section className="panel">
-            <div className="rolebar">
+            {blockedTrade&&<p className="warning">{activeTrade.status}: payment and carrier actions are paused. Review this trade in Transactions.</p>}
+            <fieldset className="trade-controls" disabled={blockedTrade}><div className="rolebar">
               <span>Demo view:</span>
               {['seller', 'buyer', 'carrier'].map((r) => (
                 <button key={r} className={role === r ? 'on' : ''} onClick={() => setRole(r)}>{r === 'seller' ? '🧑‍🌾 Seller' : r === 'buyer' ? '🚜 Buyer' : '🚚 Carrier'}</button>
               ))}
             </div>
 
-            <h2>{!overlay && step === 3 ? 'Agree and pay' : 'Delivery'}: {listing.quantity} {listing.unit} {listing.material}</h2>
-            <p className="muted">{farms[0].name} → {sel.buyer.name} · {sel.route.km} km</p>
+            <h2>{!overlay && tab==='Create Listing' && step === 3 ? 'Agree and pay' : 'Delivery'}: {listing.quantity} {listing.unit} {listing.material}</h2>
+            <p className="muted">{listing.business||farms[0].name} → {sel.buyer.name} · {sel.route.km} km</p>
 
             <div className="ledger">
               <div><span>Buyer goods payment originally held</span><strong>{money(s.buyerPays)}</strong></div>
@@ -351,7 +395,7 @@ export default function App() {
               <div className="total"><span>Seller receives after delivery</span><strong>{money(s.sellerGets)} + {money(s.transport)} refund</strong></div>
             </div>
 
-            {!overlay && step === 3 && (
+            {!overlay && tab==='Create Listing' && step === 3 && (
               <>
                 <ul className="list">{deliveryRules.map((r) => <li key={r}>{r}</li>)}</ul>
                 <div className="paygrid">
@@ -369,7 +413,7 @@ export default function App() {
               </>
             )}
 
-            {!overlay && step === 4 && funded && (
+            {!overlay && tab==='Create Listing' && step === 4 && funded && (
               <>
                 <ol className="track">{TRACK.map((t, i) => <li key={t} className={i <= stage ? 'done' : ''}>{i <= stage ? '✓' : ''} {t}</li>)}</ol>
 
@@ -380,7 +424,7 @@ export default function App() {
                     {role === 'buyer' ? (
                       <div className="row">
                         <button className="accept-button" onClick={() => setChange({ ...change, status: 'accepted' })}>Accept change</button>
-                        <button className="match-button" onClick={() => { alert('Trade cancelled. Both payments refunded in full.'); reset() }}>Cancel and refund</button>
+                        <button className="match-button" onClick={() => { changeTradeStatus(activeTrade,'Cancelled'); reset() }}>Cancel and refund</button>
                       </div>
                     ) : <p className="muted">Waiting for buyer to respond.</p>}
                   </div>
@@ -418,12 +462,13 @@ export default function App() {
                   <div className="match-card compact">
                     <h3>✅ Trade complete</h3>
                     <p>{role === 'buyer' ? `You paid ${money(s.releasedGoods)} for ${s.quantity} ${listing.unit}. Refunded: ${money(s.buyerRefund)}.` : `Seller received ${money(s.sellerGets)} and ${money(s.transport)} transport refunded.`}</p>
-                    <p className="muted small">Saved ~${disposalSaving({ ...listing, quantity: s.quantity })} disposal · ~{Math.round(s.quantity * 0.45)} kg CO₂e avoided (estimate). Please rate each other.</p>
+                    <p className="muted small">Saved ~${disposalSaving({ ...listing, quantity: s.quantity })} disposal · ~{impactFor(s.quantity,sel.route.km,listing.unit).co2} kg net CO₂e avoided (illustrative estimate). Please rate each other.</p>
                     <button className="match-button" onClick={reset}>Start a new listing</button>
                   </div>
                 )}
               </>
             )}
+            </fieldset>
           </section>
         )}
       </main>

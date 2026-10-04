@@ -92,7 +92,12 @@ export function useListingConversation(state, actions) {
           throw new VoiceStopped('Listing remains on hold.')
         }
         if(!s.matches.length){
-          await v.say('Your listing is live, but there is no match yet. Local buyer suggestions are shown on screen. These notifications are simulated in this demo.')
+          await v.say('Your listing is live, but there is no match yet.')
+          if(!s.alertChoice && s.alertCount>0){
+            const choice=await yes(`Would you like to send demo buyer alerts to ${s.alertCount} potential nearby buyers?`)
+            act.alert(choice==='yes'?'send':'decline')
+            await v.say(choice==='yes'?'Buyer alerts recorded in this demo. No external messages are sent.':'No alerts sent. Your listing stays live.')
+          } else if(!s.alertCount) await v.say('No nearby alert recipients are available yet.')
           if(await yes('Would you like to create another listing?')==='yes'){act.reset(true);return}
           throw new VoiceStopped('Listing complete. Waiting for a match.')
         }
@@ -104,7 +109,9 @@ export function useListingConversation(state, actions) {
           const i=s.matches.findIndex(m=>t.includes(m.buyer.name.toLowerCase()));return i>=0?i:null
         },i=>i<0?'wait for now':s.matches[i].buyer.name)
         if(index<0)throw new VoiceStopped('Listing stays live. No trade selected.')
-        if(await yes(`Proceed to the demo trade with ${s.matches[index].buyer.name}?`)==='yes'){act.select(s.matches[index]);return}
+        const chosen=s.matches[index]
+        if(chosen.verify && await yes('Have you reviewed the source and condition and confirmed suitability for the buyer’s intended use?')!=='yes') throw new VoiceStopped('Suitability must be confirmed before trading.')
+        if(await yes(`Proceed to the demo trade with ${chosen.buyer.name}?`)==='yes'){act.select({...chosen,buyerVerified:true});return}
         throw new VoiceStopped('Trade was not confirmed.')
       }
       if(s.step===3){
@@ -124,7 +131,7 @@ export function useListingConversation(state, actions) {
         if(s.change?.status==='pending'){
           if(s.role!=='buyer'){const role=await confirmed('A seller change is awaiting buyer review. Say buyer to review it.',roleVoice);act.role(role);return}
           if(await yes(`The seller reports ${s.change.qty} ${s.listing.unit}. ${s.change.note}. Accept this change?`)==='yes'){act.acceptChange();return}
-          if(await yes('Cancel the trade and refund both demo payments?')==='yes'){act.reset(true);return}
+          if(await yes('Cancel the trade and refund both demo payments?')==='yes'){act.cancel();return}
           throw new VoiceStopped('Change remains pending.')
         }
         if((s.pickup?.quality||s.delivered?.quality)&&!s.qualityAccepted){
