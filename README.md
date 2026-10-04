@@ -28,11 +28,24 @@ Deploy the generated `dist` directory with your existing Vercel or Netlify proje
 - Log in opens the login form; Sign up free opens registration.
 - Category appears directly below What is it. `400kg apples` now extracts `apples` without requiring the word “of”.
 - Three added categories: clean untreated wood residues, clean scoured wool offcuts and clean processed eggshells. Existing compost and animal categories remain available for compatibility. These are conditional eligibility suggestions, not certifications of low risk or legality.
-- Voice mode reads NZ questions, guidance and answer choices one at a time. Select an answer or use Speak my answer, then confirm the recognised answer. Microphone permission and browser speech support are required; use HTTPS or localhost. Typed and on-screen answers remain available. Real microphone and speech output need device/browser testing.
+- Starting with **Create a listing by voice** enables an automatic speak/listen conversation: initial description, listing summary and corrections, category checks, responsibilities, publication, buyer choice, simulated payment confirmations, carrier quantities and PIN, payout and refunds.
+- It asks concise main questions without reading Act names or rule references. Full rules remain visible. Every recognised answer is repeated and must be confirmed aloud before saving. Say **yes** to confirm or **no** to answer again.
+- Listening starts automatically after each question finishes. Say **repeat**, **pause**, **back**, or **home**. Home requires spoken confirmation before clearing progress. Resume voice restarts the current screen's review; already confirmed answers remain. Silence never implies consent.
+- Account login/registration and optional photo uploads use the screen; passwords are never requested by voice. Voice resumes after sign-in. Demo role switches can be selected by voice; production permissions need server-side enforcement.
+- Microphone permission and browser speech recognition/synthesis support are required; use HTTPS or localhost. Unsupported browsers provide on-screen fallback. Microphone errors pause voice with instructions. Actual speech quality and microphone behaviour require device/browser testing.
 - Uncertainty about a blocking biosecurity issue now holds the listing rather than allowing it to go live.
 - The carrier records actual pickup and delivery quantities and condition notes. Both demo participants see a shared in-app update log.
 - Goods release and the 2% fee are calculated from eligible actual quantities. The original buyer hold is retained in the ledger; the unused balance is refunded. The seller transport refund follows the existing demo policy.
 - Delivery requires the demo buyer PIN `4821`. Quality concerns pause payout until the buyer explicitly accepts the reported condition at the existing unit price. Otherwise funds remain held for dispute resolution; negotiated discounts are not implemented.
+
+## Try the automatic voice conversation
+
+1. Open the app over HTTPS or localhost in a browser with speech recognition and synthesis.
+2. Click **Create a listing by voice** and allow microphone access when requested.
+3. If signed out, complete the account form; voice resumes automatically.
+4. Wait until the app finishes speaking before answering. For example: “I have four hundred kilograms of apples to collect within three days.”
+5. Confirm what it heard using voice. Continue answering and confirming the checks, responsibilities and publication prompt.
+6. Use **Pause voice**, **Resume voice**, or **Use screen instead** whenever needed. In text mode, optional individual-question voice controls remain available.
 
 ## Demonstrate a weight shortfall
 
@@ -71,13 +84,17 @@ Primary guidance consulted on 4 October 2026:
 ## Files and verification
 
 - `src/App.jsx`: listing, navigation and carrier workflow.
-- `src/useRuleVoice.js`: spoken question sequence and confirmed speech answers.
+- `src/useListingConversation.js`: automatic conversation across listing and trade stages.
+- `src/voiceConversation.js`: cancellable speech, automatic listening, confirmations and number parsing.
+- `src/voicePrompts.js`: concise spoken questions and responsibilities.
+- `src/useRuleVoice.js`: optional individual-question voice controls for users who began with text.
 - `src/Account.jsx`: login/signup entry mode.
 - `src/data.js`: categories, screening questions and delivery rules.
 - `src/engine.js`: parsing, matching and settlement in cents.
 - `tests/settlement.test.js`: financial conservation, full/partial/zero quantities, excess cap, invalid values and listing parsing.
+- `tests/voice.test.js`: spoken quantities/prices, answer correction, pause, cancellation and repeat.
 
-Verified: production build, lint, four automated tests, and React component interaction checks covering login/signup, sequential speech with mocked speech APIs, funded back navigation, carrier measurements, quality hold and refunds. A real browser visual/microphone test was unavailable in the execution environment.
+Verified: production build, lint, nine automated tests, existing React component interaction checks, and a complete spoken-flow component test with mocked speech APIs: automatic resumption after login, review, checks, responsibilities, publication, match selection, payments, quantities, PIN, payouts and refunds. A real browser visual/microphone test was unavailable in the execution environment.
 
 ## Demo limitations
 
