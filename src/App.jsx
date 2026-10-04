@@ -99,7 +99,7 @@ export default function App() {
           <>
             <section className="hero">
               <p className="eyebrow">AI-POWERED FARM RESOURCE EXCHANGE</p>
-              <h1>Turn farm surplus into<span> opportunity.</span></h1>
+              <h1>Turn farm waste into<span> opportunity.</span></h1>
               <p className="subtitle">Tell AgriReuse what you have left over. Our AI helps find who can use it and whether the exchange makes sense.</p>
             </section>
             <section className="agent-card">
