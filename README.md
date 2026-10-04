@@ -21,6 +21,10 @@ npm run build
 
 Deploy the generated `dist` directory with your existing Vercel or Netlify project. This package does not publish changes to your live site.
 
+## Voice correction fix
+
+Named produce such as banana is recognised even without a quantity. Missing product descriptions use category-specific wording, such as “surplus plant material” or “surplus animal product”. Each confirmed spoken correction updates its field immediately, before asking the next correction question. Verified with a mocked full voice conversation that corrects the product to “overripe banana” and checks the visible field before category selection.
+
 ## Workspace update
 
 The attached AgriReuse reference's useful workflows were adapted into the current Vite/React application. The app keeps a white background, restrained green accents, rounded cards and responsive sticky navigation. It does not require the reference project's Next.js/Supabase setup.
@@ -114,7 +118,7 @@ Primary guidance consulted on 4 October 2026:
 - `tests/settlement.test.js`: financial conservation, full/partial/zero quantities, excess cap, invalid values and listing parsing.
 - `tests/voice.test.js`: spoken quantities/prices, answer correction, pause, cancellation and repeat.
 
-Verified: production build, lint, 13 automated tests, component interaction checks for filters/requests/archive/restore/delete/reload, spoken opt-in alert approval, and a complete spoken-flow component test with mocked speech APIs: automatic resumption after login, review, checks, responsibilities, publication, match selection, payments, quantities, PIN, payouts and refunds. A real browser visual/microphone test was unavailable in the execution environment.
+Verified: production build, lint, 14 automated tests, component interaction checks for filters/requests/archive/restore/delete/reload, spoken opt-in alert approval, and a complete spoken-flow component test with mocked speech APIs: automatic resumption after login, review, checks, responsibilities, publication, match selection, payments, quantities, PIN, payouts and refunds. A real browser visual/microphone test was unavailable in the execution environment.
 
 ## Demo limitations
 
