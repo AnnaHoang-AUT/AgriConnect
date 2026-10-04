@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { categories, FEE } from './data'
 import { signUp, logIn, saveUser } from './auth'
 
-export function AuthPanel({ onDone, note, onLegal }) {
-  const [mode, setMode] = useState('signup')
+export function AuthPanel({ onDone, note, onLegal, initialMode = 'signup' }) {
+  const [mode, setMode] = useState(initialMode)
   const [f, setF] = useState({ name: '', farm: '', nzbn: '', email: '', password: '', terms: false })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)

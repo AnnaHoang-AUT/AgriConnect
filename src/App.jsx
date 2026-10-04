@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './App.css'
+import { useRuleVoice } from './useRuleVoice'
 import { categories, declarations, deliveryRules, farms, FEE } from './data'
 import { AuthPanel, AccountPanel } from './Account'
 import { LegalModal } from './Legal'
@@ -28,16 +29,29 @@ export default function App() {
   const [user, setUser] = useState(currentUser)
   const [overlay, setOverlay] = useState(null) // null | 'auth' | 'account'
   const [legal, setLegal] = useState(null) // null | 'terms' | 'privacy'
+  const [authMode, setAuthMode] = useState('signup')
+  const [voiceMode, setVoiceMode] = useState(false)
+  const [pickup, setPickup] = useState(null)
+  const [delivery, setDelivery] = useState(null)
+  const [actualQty, setActualQty] = useState('')
+  const [carrierNote, setCarrierNote] = useState('')
+  const [qualityIssue, setQualityIssue] = useState(false)
+  const [qualityAccepted, setQualityAccepted] = useState(false)
+  const [pin, setPin] = useState('')
+  const [notices, setNotices] = useState([])
   const [pending, setPending] = useState(false)
 
   const cat = listing && categories[listing.cat]
+  const voice = useRuleVoice(cat?.questions || [], (id, value) => setAnswers((a) => ({ ...a, [id]: value })))
   const allAnswered = cat && cat.questions.every((q) => answers[q.id])
-  const ready = allAnswered && agreed.length === declarations.length
-  const goods = sel ? Math.round((change?.status === 'accepted' ? change.qty : listing.quantity) * listing.price * 100) / 100 : 0
-  const s = sel ? settle(goods, sel.route.cost) : null
+  const ready = allAnswered && agreed.length === declarations.length && listing.quantity > 0 && Number.isFinite(listing.quantity) && listing.price >= 0 && Number.isFinite(listing.price) && listing.collectDays > 0 && listing.material.trim()
+  const agreedQty = change?.status === 'accepted' ? change.qty : listing?.quantity
+  const goods = sel ? Math.round(listing.quantity * listing.price * 100) / 100 : 0
+  const s = sel ? settle(goods, sel.route.cost, listing.quantity, pickup?.qty ?? agreedQty, delivery?.qty ?? pickup?.qty ?? agreedQty) : null
   const funded = paid.seller && paid.buyer
 
   function speak() {
+    setVoiceMode(true)
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) return alert('Voice input is not supported in this browser. Please type instead.')
     const rec = new SR()
@@ -50,13 +64,14 @@ export default function App() {
 
   function start() {
     if (!text.trim()) return alert('Please tell AgriReuse what you have first.')
-    if (!user) { setPending(true); return setOverlay('auth') }
+    if (!user) { setAuthMode('signup'); setPending(true); return setOverlay('auth') }
     begin()
   }
 
   function begin() { setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1) }
 
   function submitListing() {
+    voice.stop()
     const f = evaluate(listing, answers)
     setFlags(f)
     setMatches(f.hold ? [] : findMatches(listing, f))
@@ -69,30 +84,48 @@ export default function App() {
     if (pending && text.trim()) begin()
     setPending(false)
   }
-  const openAuth = () => { setPending(false); setOverlay('auth') }
+  const openAuth = (mode) => { voice.stop(); setAuthMode(mode); setPending(false); setOverlay('auth') }
   const inProgress = (step === 1 && Object.keys(answers).length > 0) || (step >= 3 && (paid.seller || paid.buyer) && stage < 3)
-  const canBack = !!overlay || step === 1 || step === 2 || (step === 3 && !paid.seller && !paid.buyer)
+  const canBack = !!overlay || step === 1 || step === 2 || (step === 3 && !paid.seller && !paid.buyer) || step === 4
   function goHome() {
+    voice.stop()
     if (inProgress && !window.confirm('Leave this page? Your progress on this listing or trade will be lost in the demo.')) return
     setOverlay(null); reset()
   }
-  function goBack() { if (overlay) setOverlay(null); else setStep(step - 1) }
+  function goBack() { voice.stop(); if (overlay) setOverlay(null); else setStep(step - 1) }
   function leave() { logOut(); setUser(null); setOverlay(null); reset() }
 
   const update = (k, v) => setListing({ ...listing, [k]: v })
-  const reset = () => { setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
+  const reset = () => { voice.stop(); setRole('seller'); setPickup(null); setDelivery(null); setActualQty(''); setCarrierNote(''); setQualityIssue(false); setQualityAccepted(false); setPin(''); setNotices([]); setDraftQty(''); setDraftNote(''); setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null); setListing(null) }
+
+  function recordCarrier(delivered = false) {
+    const qty = Number(actualQty)
+    const limit = delivered ? pickup?.qty : agreedQty
+    if (actualQty === '' || !Number.isFinite(qty) || qty < 0 || qty > limit) return alert(`Enter a quantity from 0 to ${limit} ${listing.unit}. Excess goods need a new agreement.`)
+    if ((qty !== limit || qualityIssue) && !carrierNote.trim()) return alert('Explain the quantity or quality difference for both parties.')
+    if (delivered && pin !== '4821') return alert('Enter the correct buyer PIN to confirm arrival.')
+    const report = { qty, note: carrierNote.trim(), quality: qualityIssue }
+    if (delivered) { setDelivery(report); setStage(2) } else { setPickup(report); setStage(1) }
+    setNotices((n) => [...n, { ...report, event: delivered ? 'Delivery' : 'Pickup', time: new Date().toLocaleTimeString() }])
+    if (qualityIssue) setQualityAccepted(false)
+    setActualQty(''); setCarrierNote(''); setQualityIssue(false); setPin('')
+  }
+  const disputedQuality = (pickup?.quality || delivery?.quality) && !qualityAccepted
 
   return (
     <div className="app">
       <header className="header">
-        <button className="brand" onClick={goHome} aria-label="AgriReuse home"><span className="logo">🌱</span><span>AgriReuse</span></button>
-        <nav className="acct">
+        <button className="brand" onClick={goHome} aria-label="AgriReuse home"><span className="logo">🌱</span><span className="brand-text">AgriReuse<small>List it. Match it. Reuse it.</small></span></button>
+        <nav className="acct" aria-label="Main navigation">
+          <button className="link" onClick={goHome}>Home</button>
+          {canBack && <button className="link" onClick={goBack}>← Back</button>}
+          {!overlay && step > 0 && <span className="nav-status">{STEPS[step]}</span>}
           {user ? (
-            <button className="demo-badge" onClick={() => setOverlay('account')}>{user.member ? '🔔 ' : ''}{user.farm}</button>
+            <button className="demo-badge" onClick={() => { voice.stop(); setOverlay('account') }}>{user.member ? '🔔 ' : ''}{user.farm}</button>
           ) : (
             <>
-              <button className="link" onClick={openAuth}>Log in</button>
-              <button className="demo-badge" onClick={openAuth}>Sign up free</button>
+              <button className="link" onClick={() => openAuth('login')}>Log in</button>
+              <button className="demo-badge" onClick={() => openAuth('signup')}>Sign up free</button>
             </>
           )}
         </nav>
@@ -105,7 +138,7 @@ export default function App() {
             <button className="link" onClick={goHome}>⌂ Home</button>
           </div>
         )}
-        {overlay === 'auth' && <AuthPanel onLegal={setLegal} onDone={signedIn} note={pending && text.trim() ? 'Create a free account to publish your listing. We kept what you typed.' : ''} />}
+        {overlay === 'auth' && <AuthPanel key={authMode} initialMode={authMode} onLegal={setLegal} onDone={signedIn} note={pending && text.trim() ? 'Create a free account to publish your listing. We kept what you typed.' : ''} />}
         {overlay === 'account' && user && <AccountPanel user={user} onChange={setUser} onBack={() => setOverlay(null)} onLogout={leave} />}
         {!overlay && step > 0 && (
           <ol className="steps">
@@ -149,8 +182,8 @@ export default function App() {
             <p className="muted">We read this from what you said. Fix anything that looks wrong.</p>
             <div className="form-grid">
               <label>What is it<input value={listing.material} onChange={(e) => update('material', e.target.value)} /></label>
-              <label>Type
-                <select value={listing.cat} onChange={(e) => { update('cat', e.target.value); setAnswers({}) }}>
+              <label className="category-field">Category
+                <select value={listing.cat} onChange={(e) => { voice.stop(); update('cat', e.target.value); setAnswers({}); setAgreed([]) }}>
                   {Object.entries(categories).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
                 </select>
               </label>
@@ -162,13 +195,22 @@ export default function App() {
             <p className="muted">Asking total: <strong>{money(listing.quantity * listing.price)}</strong> · Suggested: {money(cat.price)}/{listing.unit} based on similar listings.</p>
 
             <h3>NZ rules for {cat.label.toLowerCase()}</h3>
+            <div className="voice-tools">
+              <label className="check"><input type="checkbox" checked={voiceMode} onChange={(e) => { setVoiceMode(e.target.checked); if (!e.target.checked) voice.stop() }} /><span>Use voice for the NZ rules questions</span></label>
+              {voiceMode && <>
+                <button className="match-button" onClick={() => voice.read(0)}>🎙️ Read questions aloud</button>
+                {voice.active >= 0 && <div className="row"><button className="match-button" onClick={() => voice.read(voice.active)}>Repeat question</button><button className="match-button" onClick={voice.listen}>Speak my answer</button><button className="link" onClick={voice.stop}>Stop voice</button></div>}
+                {voice.heard && <button className="accept-button" onClick={() => voice.answer(voice.active, voice.heard)}>Confirm: {voice.heard === 'unsure' ? 'Not sure' : voice.heard}</button>}
+                <p className="muted small" role="status">{voice.status || 'Questions are read one at a time. Confirm each spoken answer or select it below.'}</p>
+              </>}
+            </div>
             <p className="muted">Answer honestly. Buyers see your answers, and some answers stop a listing going live.</p>
-            {cat.questions.map((q) => (
-              <div className="q" key={q.id}>
+            {cat.questions.map((q, index) => (
+              <div className={"q " + (voice.active === index ? "voice-active" : "")} key={q.id}>
                 <p>{q.text}<small>{q.law}</small>{answers[q.id] === 'yes' && q.help && <em>{q.help}</em>}</p>
                 <div className="seg">
                   {['no', 'unsure', 'yes'].map((v) => (
-                    <button key={v} className={answers[q.id] === v ? 'on ' + v : ''} onClick={() => setAnswers({ ...answers, [q.id]: v })}>{v === 'unsure' ? 'Not sure' : v[0].toUpperCase() + v.slice(1)}</button>
+                    <button key={v} className={answers[q.id] === v ? 'on ' + v : ''} onClick={() => voice.answer(index, v)}>{v === 'unsure' ? 'Not sure' : v[0].toUpperCase() + v.slice(1)}</button>
                   ))}
                 </div>
               </div>
@@ -271,9 +313,10 @@ export default function App() {
             <p className="muted">{farms[0].name} → {sel.buyer.name} · {sel.route.km} km</p>
 
             <div className="ledger">
-              <div><span>Buyer pays for goods (held)</span><strong>{money(s.buyerPays)}</strong></div>
+              <div><span>Buyer goods payment originally held</span><strong>{money(s.buyerPays)}</strong></div>
               <div><span>Seller pays transport (held, refunded)</span><strong>{money(s.transport)}</strong></div>
-              <div><span>AgriReuse fee ({FEE.rate * 100}% of goods)</span><strong>−{money(s.fee)}</strong></div>
+              <div><span>AgriReuse fee ({FEE.rate * 100}% of released goods)</span><strong>−{money(s.fee)}</strong></div>
+              {(pickup || delivery || change?.status === 'accepted') && <><div><span>Eligible quantity · {s.releasePercent.toFixed(1)}% of original</span><strong>{s.quantity} {listing.unit}</strong></div><div><span>Goods payment eligible for release</span><strong>{money(s.releasedGoods)}</strong></div><div><span>Unused goods payment refunded to buyer</span><strong>{money(s.buyerRefund)}</strong></div></>}
               <div className="total"><span>Seller receives after delivery</span><strong>{money(s.sellerGets)} + {money(s.transport)} refund</strong></div>
             </div>
 
@@ -284,13 +327,14 @@ export default function App() {
                   <div className={paid.seller ? 'paid' : ''}><strong>Seller</strong><span>{paid.seller ? '✓ Transport paid' : money(s.transport) + ' due'}</span></div>
                   <div className={paid.buyer ? 'paid' : ''}><strong>Buyer</strong><span>{paid.buyer ? '✓ Goods paid' : money(s.buyerPays) + ' due'}</span></div>
                 </div>
+                {funded && <button className="match-button" onClick={() => setStep(4)}>Continue to delivery</button>}
                 {role === 'carrier' && <p className="muted">Carriers see the job once both payments are held.</p>}
                 {role !== 'carrier' && !paid[role] && (
                   <button className="voice-button" onClick={() => { const n = { ...paid, [role]: true }; setPaid(n); if (n.seller && n.buyer) setStep(4) }}>
                     Accept terms and pay {money(role === 'seller' ? s.transport : s.buyerPays)}
                   </button>
                 )}
-                {role !== 'carrier' && paid[role] && <p className="muted">Waiting for the {role === 'seller' ? 'buyer' : 'seller'}. Switch the demo view to continue.</p>}
+                {role !== 'carrier' && paid[role] && !funded && <p className="muted">Waiting for the {role === 'seller' ? 'buyer' : 'seller'}. Switch the demo view to continue.</p>}
               </>
             )}
 
@@ -310,7 +354,7 @@ export default function App() {
                     ) : <p className="muted">Waiting for buyer to respond.</p>}
                   </div>
                 )}
-                {change?.status === 'accepted' && <p className="tag green">Change accepted. Goods total updated to {money(goods)}.</p>}
+                {change?.status === 'accepted' && <p className="tag green">Change accepted. Eligible goods value: {money(change.qty * listing.price)}. Original held payment remains {money(goods)}; any difference is refunded at settlement.</p>}
 
                 {stage === 0 && role === 'seller' && change?.status !== 'pending' && (
                   <>
@@ -319,24 +363,31 @@ export default function App() {
                         <label>New amount ({listing.unit})<input type="number" value={draftQty} onChange={(e) => setDraftQty(e.target.value)} /></label>
                         <label>What changed<input value={draftNote} onChange={(e) => setDraftNote(e.target.value)} /></label>
                       </div>
-                      <button className="match-button" disabled={!draftQty || !draftNote} onClick={() => setChange({ qty: +draftQty, note: draftNote, status: 'pending' })}>Send change notice</button>
+                      <button className="match-button" disabled={!draftQty || !draftNote.trim() || +draftQty <= 0 || +draftQty > listing.quantity} onClick={() => setChange({ qty: +draftQty, note: draftNote, status: 'pending' })}>Send change notice</button>
                     </details>
-                    <button className="voice-button" onClick={() => setStage(1)}>Hand goods to carrier</button>
+                    <p className="muted">The carrier records the actual quantity at handover. Switch to Carrier to continue.</p>
                   </>
                 )}
-                {stage === 0 && role !== 'seller' && change?.status !== 'pending' && <p className="muted">Waiting for the seller to hand over the goods.</p>}
+                {stage === 0 && role === 'buyer' && change?.status !== 'pending' && <p className="muted">Waiting for the seller to hand over the goods.</p>}
 
-                {stage === 1 && (role === 'carrier'
-                  ? <button className="voice-button" onClick={() => setStage(2)}>Enter buyer PIN 4821 and confirm delivery</button>
-                  : <p className="muted">On its way. {role === 'buyer' ? 'Your delivery PIN is 4821. Give it to the carrier on arrival.' : 'Waiting for the carrier to confirm delivery.'}</p>)}
-
-                {stage === 2 && <button className="voice-button" onClick={() => setStage(3)}>Release payments</button>}
+                {notices.length > 0 && <div className="notice" role="status"><strong>Carrier updates shared with seller and buyer</strong>{notices.map((n, i) => <p key={i}>{n.event} · {n.qty} {listing.unit} · {n.time}{n.note ? ` — ${n.note}` : ' — Quantity confirmed'}{n.quality ? ' · Quality review required' : ''}</p>)}<small>In-app demo notifications; no external messages are sent.</small></div>}
+                {(stage === 0 || stage === 1) && role === 'carrier' && change?.status !== 'pending' && <div className="notice">
+                  <h3>{stage === 0 ? 'Record actual pickup' : 'Record actual delivery'}</h3>
+                  <p className="muted">Agreed: {agreedQty} {listing.unit}{pickup ? ` · Picked up: ${pickup.qty} ${listing.unit}` : ''}. Payment uses the lower picked-up and delivered quantity, capped at the agreement.</p>
+                  <div className="form-grid"><label>Actual {stage === 0 ? 'picked-up' : 'delivered'} quantity ({listing.unit})<input type="number" min="0" max={stage === 0 ? agreedQty : pickup.qty} step="any" value={actualQty} onChange={(e) => setActualQty(e.target.value)} /></label><label>Difference or condition notes<input value={carrierNote} onChange={(e) => setCarrierNote(e.target.value)} /></label></div>
+                  <label className="check"><input type="checkbox" checked={qualityIssue} onChange={(e) => setQualityIssue(e.target.checked)} /><span>Quality differs from the agreed description — hold release for buyer review</span></label>
+                  {stage === 1 && <label>Buyer delivery PIN<input inputMode="numeric" maxLength="4" value={pin} onChange={(e) => setPin(e.target.value)} /></label>}
+                  <button className="voice-button" onClick={() => recordCarrier(stage === 1)}>{stage === 0 ? 'Confirm pickup and notify both parties' : 'Confirm delivery and notify both parties'}</button>
+                </div>}
+                {stage === 1 && role !== 'carrier' && <p className="muted">On its way. {role === 'buyer' ? 'Your delivery PIN is 4821. Give it to the carrier on arrival.' : 'Waiting for carrier delivery measurements.'}</p>}
+                {disputedQuality && <div className="warning"><strong>Payment release paused: quality review</strong><p>Review the carrier condition notes. Weight alone does not resolve a quality concern.</p>{role === 'buyer' ? <button className="match-button" onClick={() => setQualityAccepted(true)}>Accept reported condition at the agreed unit price</button> : <p>Waiting for the buyer to accept the reported condition. Otherwise funds remain held for dispute resolution.</p>}</div>}
+                {stage === 2 && <button className="voice-button" disabled={role !== 'carrier' || disputedQuality} onClick={() => setStage(3)}>{disputedQuality ? 'Payment held for quality review' : role !== 'carrier' ? 'Carrier must release confirmed payments' : 'Release payments and refund unused balance'}</button>}
 
                 {stage === 3 && (
                   <div className="match-card compact">
                     <h3>✅ Trade complete</h3>
-                    <p>{role === 'buyer' ? `You paid ${money(s.buyerPays)} for ${change?.status === 'accepted' ? change.qty : listing.quantity} ${listing.unit}.` : `Seller received ${money(s.sellerGets)} and ${money(s.transport)} transport refunded.`}</p>
-                    <p className="muted small">Saved ~${disposalSaving(listing)} disposal · ~{Math.round(listing.quantity * 0.45)} kg CO₂e avoided (estimate). Please rate each other.</p>
+                    <p>{role === 'buyer' ? `You paid ${money(s.releasedGoods)} for ${s.quantity} ${listing.unit}. Refunded: ${money(s.buyerRefund)}.` : `Seller received ${money(s.sellerGets)} and ${money(s.transport)} transport refunded.`}</p>
+                    <p className="muted small">Saved ~${disposalSaving({ ...listing, quantity: s.quantity })} disposal · ~{Math.round(s.quantity * 0.45)} kg CO₂e avoided (estimate). Please rate each other.</p>
                     <button className="match-button" onClick={reset}>Start a new listing</button>
                   </div>
                 )}

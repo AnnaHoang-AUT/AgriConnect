@@ -1,4 +1,4 @@
-import { categories, demand, farms, routes, FEE } from './data'
+import { categories, demand, farms, routes, FEE } from './data.js'
 
 export const money = (n) => '$' + n.toFixed(2)
 const r2 = (n) => Math.round(n * 100) / 100
@@ -14,8 +14,8 @@ export function parseListing(text) {
     else if (m[2].startsWith('m')) unit = 'm³'
   }
   const d = t.match(/(\d+)\s*days?/)
-  const mat = t.match(/\bof\s+([a-z\s-]+?)(?:\s+(?:that|which|needing|need|to be)|[,.]|$)/)
-  const cat = /manure|compost|effluent|mulch/.test(t) ? 'organic' : /meat|bone|blood|offal|whey|fish/.test(t) ? 'animal' : 'plant'
+  const mat = t.match(/(?:\bof\s+|(?:kg|kilos?|tonnes?|tons?|m3|m³|bales?)\s+)([a-z\s-]+?)(?:\s+(?:that|which|needing|need|to be|to collect)|[,.]|$)/)
+  const cat = /eggshell|egg shell/.test(t) ? 'eggshell' : /wool|fleece/.test(t) ? 'wool' : /wood|sawdust|shavings/.test(t) ? 'wood' : /manure|compost|effluent|mulch/.test(t) ? 'organic' : /meat|bone|blood|offal|whey|fish/.test(t) ? 'animal' : 'plant'
   const base = categories[cat].price
   return {
     material: mat ? mat[1].trim() : 'surplus material', cat, quantity, unit,
@@ -33,7 +33,7 @@ export function evaluate(l, answers) {
   qs.forEach((q) => {
     const a = answers[q.id]
     if (a === 'yes') flags[q.risk] = true
-    if (a === 'unsure') flags.unsure.push(q.id)
+    if (a === 'unsure') { flags.unsure.push(q.id); if (q.risk === 'hold') flags.hold = true; else flags.nofeed = true }
   })
   return flags
 }
@@ -64,7 +64,12 @@ export function findMatches(l, flags) {
 export const nearbyBuyers = (cat) =>
   farms.filter((f) => f.interests?.includes(cat) && f.km).sort((a, b) => a.km - b.km)
 
-export function settle(goods, transport) {
-  const fee = r2(goods * FEE.rate)
-  return { fee, sellerGets: r2(goods - fee), transport, buyerPays: goods }
+// Settle in cents, preserving the original buyer hold. Never charge for excess weight.
+export function settle(goods, transport, declared = 1, picked = declared, delivered = picked) {
+  if (![goods, transport, declared, picked, delivered].every(Number.isFinite) || goods < 0 || transport < 0 || declared <= 0 || picked < 0 || delivered < 0 || delivered > picked) throw new Error('Invalid settlement quantities')
+  const heldCents = Math.round(goods * 100)
+  const quantity = Math.min(declared, picked, delivered)
+  const releaseCents = Math.round(heldCents * quantity / declared)
+  const feeCents = Math.round(releaseCents * FEE.rate)
+  return { fee: feeCents / 100, sellerGets: (releaseCents - feeCents) / 100, transport, buyerPays: heldCents / 100, releasedGoods: releaseCents / 100, buyerRefund: (heldCents - releaseCents) / 100, quantity, releasePercent: quantity / declared * 100 }
 }
