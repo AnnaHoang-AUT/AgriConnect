@@ -26,3 +26,13 @@ test('parse apples without of; unsure movement controls holds listing', () => {
   assert.equal(parseListing('400kg apples').cat, 'plant')
   assert.equal(evaluate({cat: 'plant'}, {move:'unsure'}).hold, true)
 })
+
+test('named bananas stay specific and missing descriptions use category-specific fallbacks', () => {
+  assert.equal(parseListing('banana').material, 'banana')
+  assert.equal(parseListing('I have overripe bananas').material, 'overripe bananas')
+  for (const [description,expected] of [
+    ['plant waste','surplus plant material'],['animal product','surplus animal product'],
+    ['wood','surplus untreated wood material'],['wool','surplus wool material'],
+    ['eggshell','surplus eggshell material'],['organic compost','surplus organic material']
+  ]) assert.equal(parseListing(description).material, expected)
+})
