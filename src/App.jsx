@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import './App.css'
 import { categories, declarations, deliveryRules, farms, FEE } from './data'
+import { AuthPanel, AccountPanel } from './Account'
+import { currentUser, logOut } from './auth'
 import { parseListing, evaluate, findMatches, nearbyBuyers, settle, money, disposalSaving } from './engine'
 
 const STEPS = ['Describe', 'Check rules', 'Match', 'Pay', 'Deliver']
@@ -22,6 +24,8 @@ export default function App() {
   const [draftQty, setDraftQty] = useState('')
   const [draftNote, setDraftNote] = useState('')
   const [listening, setListening] = useState(false)
+  const [user, setUser] = useState(currentUser)
+  const [overlay, setOverlay] = useState(null) // null | 'auth' | 'account'
 
   const cat = listing && categories[listing.cat]
   const allAnswered = cat && cat.questions.every((q) => answers[q.id])
@@ -43,6 +47,7 @@ export default function App() {
 
   function start() {
     if (!text.trim()) return alert('Please tell AgriReuse what you have first.')
+    if (!user) return setOverlay('auth')
     setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1)
   }
 
@@ -53,6 +58,13 @@ export default function App() {
     setStep(2)
   }
 
+  function signedIn(u) {
+    setUser(u)
+    setOverlay(null)
+    if (text.trim() && !listing) { setListing(parseListing(text)); setAnswers({}); setAgreed([]); setStep(1) }
+  }
+  function leave() { logOut(); setUser(null); setOverlay(null); reset() }
+
   const update = (k, v) => setListing({ ...listing, [k]: v })
   const reset = () => { setStep(0); setText(''); setSel(null); setPaid({ seller: false, buyer: false }); setStage(0); setChange(null) }
 
@@ -60,11 +72,22 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="brand"><span className="logo">🌱</span><span>AgriReuse</span></div>
-        <span className="demo-badge">Member · ${FEE.membership}/yr + {FEE.rate * 100}% per trade</span>
+        <nav className="acct">
+          {user ? (
+            <button className="demo-badge" onClick={() => setOverlay('account')}>{user.member ? '🔔 ' : ''}{user.farm}</button>
+          ) : (
+            <>
+              <button className="link" onClick={() => setOverlay('auth')}>Log in</button>
+              <button className="demo-badge" onClick={() => setOverlay('auth')}>Sign up free</button>
+            </>
+          )}
+        </nav>
       </header>
 
       <main className="main">
-        {step > 0 && (
+        {overlay === 'auth' && <AuthPanel onDone={signedIn} note={text.trim() && !user ? 'Create a free account to publish your listing. We kept what you typed.' : ''} />}
+        {overlay === 'account' && user && <AccountPanel user={user} onChange={setUser} onBack={() => setOverlay(null)} onLogout={leave} />}
+        {!overlay && step > 0 && (
           <ol className="steps">
             {STEPS.map((n, i) => (
               <li key={n} className={i === step - 1 ? 'on' : i < step - 1 ? 'done' : ''}>{i < step - 1 ? '✓' : i + 1} {n}</li>
@@ -72,11 +95,11 @@ export default function App() {
           </ol>
         )}
 
-        {step === 0 && (
+        {!overlay && step === 0 && (
           <>
             <section className="hero">
               <p className="eyebrow">AI-POWERED FARM RESOURCE EXCHANGE</p>
-              <h1>Turn farm waste into<span> opportunity.</span></h1>
+              <h1>Turn farm surplus into<span> opportunity.</span></h1>
               <p className="subtitle">Tell AgriReuse what you have left over. Our AI helps find who can use it and whether the exchange makes sense.</p>
             </section>
             <section className="agent-card">
@@ -100,7 +123,7 @@ export default function App() {
           </>
         )}
 
-        {step === 1 && (
+        {!overlay && step === 1 && (
           <section className="panel">
             <h2>Check your listing</h2>
             <p className="muted">We read this from what you said. Fix anything that looks wrong.</p>
@@ -143,7 +166,7 @@ export default function App() {
           </section>
         )}
 
-        {step === 2 && flags.hold && (
+        {!overlay && step === 2 && flags.hold && (
           <section className="panel">
             <span className="tag red">Listing on hold</span>
             <h2>This can't be listed yet</h2>
@@ -157,7 +180,7 @@ export default function App() {
           </section>
         )}
 
-        {step === 2 && !flags.hold && (
+        {!overlay && step === 2 && !flags.hold && (
           <section className="match-result">
             <div className="result-heading">
               <div>
@@ -201,7 +224,7 @@ export default function App() {
             ) : (
               <div className="match-card compact">
                 <h3>No match yet, but your listing is live</h3>
-                <p className="muted">We've alerted {nearbyBuyers(listing.cat).length} nearby members who work with this kind of material.</p>
+                <p className="muted">We've alerted {nearbyBuyers(listing.cat).length} nearby subscribed members who follow this category.</p>
                 {nearbyBuyers(listing.cat).map((f) => (
                   <div className="notice" key={f.id}>
                     <strong>{f.name}</strong> <small>{f.type} · {f.km} km away</small>
@@ -215,7 +238,7 @@ export default function App() {
           </section>
         )}
 
-        {step >= 3 && sel && (
+        {!overlay && step >= 3 && sel && (
           <section className="panel">
             <div className="rolebar">
               <span>Demo view:</span>
@@ -224,7 +247,7 @@ export default function App() {
               ))}
             </div>
 
-            <h2>{step === 3 ? 'Agree and pay' : 'Delivery'}: {listing.quantity} {listing.unit} {listing.material}</h2>
+            <h2>{!overlay && step === 3 ? 'Agree and pay' : 'Delivery'}: {listing.quantity} {listing.unit} {listing.material}</h2>
             <p className="muted">{farms[0].name} → {sel.buyer.name} · {sel.route.km} km</p>
 
             <div className="ledger">
@@ -234,7 +257,7 @@ export default function App() {
               <div className="total"><span>Seller receives after delivery</span><strong>{money(s.sellerGets)} + {money(s.transport)} refund</strong></div>
             </div>
 
-            {step === 3 && (
+            {!overlay && step === 3 && (
               <>
                 <ul className="list">{deliveryRules.map((r) => <li key={r}>{r}</li>)}</ul>
                 <div className="paygrid">
@@ -251,7 +274,7 @@ export default function App() {
               </>
             )}
 
-            {step === 4 && funded && (
+            {!overlay && step === 4 && funded && (
               <>
                 <ol className="track">{TRACK.map((t, i) => <li key={t} className={i <= stage ? 'done' : ''}>{i <= stage ? '✓' : ''} {t}</li>)}</ol>
 
